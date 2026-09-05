@@ -7,7 +7,7 @@ if (!defined('__TYPECHO_ROOT_DIR__')) exit;
  * @author 羽中 && 饭饭
  * @version 2.0.0
  * @dependence 14.10.10-*
- * @link https://github.com/jzwalk/Smilies
+ * @link https://github.com/noisky/typecho-smilies
  */
 class Smilies_Plugin implements Typecho_Plugin_Interface
 {
@@ -308,72 +308,19 @@ class Smilies_Plugin implements Typecho_Plugin_Interface
 	{
 		$options = Helper::options();
 		$settings = $options->plugin('Smilies');
-		$allowpop = false;
-		$jqmode = false;
 		$textareaid = $settings->textareaid;
 		$textareaid = $textareaid ? $textareaid : _t('一般无需填写');
 
 		$idset = $widget->is('single') ? $textareaid : 'text';
-		$txtid = $jqmode ? '#'.$idset : $idset;
+		$txtid = $idset;
 		$txtdom = 'domId("'.$txtid.'")';
 		if ($widget->is('single') && $idset==_t('一般无需填写')) {
 			$txtid = 'textarea';
 			$txtdom = 'domTag("'.$txtid.'")';
 		}
 
-		//jquery模式
-		if ($jqmode) {
-			$auto = '';
-			$js = '
-<script type="text/javascript">
-$(function() {
-	var box = $("#smiliesbox");
-	$("#smiliesbutton").click(function(){
-		box.show();
-	});
-	$("span",box).click(function() {
-		$("'.$txtid.'").insert($(this).attr("data-tag"));';
-			if ($allowpop) {
-				$js .= '
-		box.hide();';
-				$auto = '
-	$(document).mouseup(function(e) {
-		if (!box.is(e.target) && box.has(e.target).length === 0) {
-			box.hide();
-		}
-	});';
-			}
-			$js .= '
-	});'.$auto.'
-	$.fn.extend({
-		"insert": function(myValue) {
-			var $t = $(this)[0];
-			if (document.selection) {
-				this.focus();
-				sel = document.selection.createRange();
-				sel.text = myValue;
-				this.focus()
-			} else if ($t.selectionStart || $t.selectionStart=="0") {
-				var startPos = $t.selectionStart;
-				var endPos = $t.selectionEnd;
-				var scrollTop = $t.scrollTop;
-				$t.value = $t.value.substring(0, startPos) + myValue + $t.value.substring(endPos, $t.value.length);
-				this.focus();
-				$t.selectionStart = startPos + myValue.length;
-				$t.selectionEnd = startPos + myValue.length;
-				$t.scrollTop = scrollTop
-			} else {
-				this.value += myValue;
-				this.focus()
-			}
-		}
-	}) 
-});
-</script>
-		';
-		//js模式
-		} else {
-			$js = '<script type="text/javascript">
+		//固定使用原生 JavaScript，不依赖 jQuery。
+		$js = '<script type="text/javascript">
 //<![CDATA[
 Smilies = {
 	domId : function(id) {
@@ -381,12 +328,6 @@ Smilies = {
 	},
 	domTag : function(id) {
 		return document.getElementsByTagName(id)[0];
-	},
-	showBox : function () {
-		this.domId("smiliesbox").style.display = "block";
-	},
-	closeBox : function () {
-		this.domId("smiliesbox").style.display = "none";
 	},
 	grin : function (tag) {
 		tag = \' \' + tag + \' \'; myField = this.'.$txtdom.';
@@ -408,21 +349,14 @@ Smilies = {
 		):(
 			myField.value += tag,
 			myField.focus()
-		);';
-			if ($allowpop) {
-				$js .= '
-		this.closeBox();';
-			}
-			$js .= '
+		);
 	}
 } 
 //]]>
 </script>';
-		}
 
 		if ($widget->is('single')) {
-			echo ($jqmode ? '<script type="text/javascript">//<![CDATA[
-	window.jQuery || document.write("<script type=\"text/javascript\" src=\"http://cdn.staticfile.org/jquery/1.8.3/jquery.min.js\"><\/script>")//]]></script>' : '').$js;
+			echo $js;
 		}
 		if (($widget instanceof Widget_Contents_Post_Edit || $widget instanceof \Widget\Contents\Page\Edit)
 			&& $settings->postmode) {
