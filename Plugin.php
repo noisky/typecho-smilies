@@ -1,11 +1,11 @@
 <?php
 if (!defined('__TYPECHO_ROOT_DIR__')) exit;
 /**
- * Typecho 表情插件：贴吧表情专用版，支持 CDN 地址替换、正文表情解析及文章/页面编辑器表情选择框
+ * Typecho 表情插件：贴吧表情专用版
  * 
  * @package Smilies
- * @author 羽中 && 饭饭
- * @version 2.0.0
+ * @author 饭饭
+ * @version 2.0.1
  * @dependence 14.10.10-*
  * @link https://github.com/noisky/typecho-smilies
  */
@@ -217,12 +217,12 @@ class Smilies_Plugin implements Typecho_Plugin_Interface
 
 			if (!in_array($grin,$smiled)) {
 				$smiled[] = $grin;
-				$smiliesicon[] = '<span onclick="Smilies.grin(\''.$tag.'\');" data-tag=" '.$tag.' " class="face"><img src="'.$smiliesurl.$grin.'" alt="'.$grin.'"/></span>';
+				$smiliesicon[] = '<span onclick="Smilies.grin(\''.$tag.'\');" data-tag=" '.$tag.' " class="face"><img src="'.$smiliesurl.$grin.'" loading="lazy" decoding="async" width="30" height="30" alt="'.$grin.'"/></span>';
 			}
 
 			$smiliestag[] = $tag;
 			$grin =str_replace("@2x", "", $grin);
-			$smiliesimg[] = '<img class="smilies"  src="'.$smiliesurl.$grin.'" alt="'.$grin.'"/>';
+			$smiliesimg[] = '<img class="smilies"  src="'.$smiliesurl.$grin.'" loading="lazy" decoding="async" alt="'.$grin.'"/>';
 		}
 
 		return array($smilies,$smiliesicon,$smiliestag,$smiliesimg);
@@ -262,7 +262,7 @@ class Smilies_Plugin implements Typecho_Plugin_Interface
 
 		$options = Helper::options();
 		//允许图片标签
-		$options->commentsHTMLTagAllowed .= '<img src="" alt="" style=""/>';
+		$options->commentsHTMLTagAllowed .= '<img src="" alt="" style="" loading="" decoding=""/>';
 
 		if ($widget instanceof Widget_Abstract_Comments || $widget instanceof Widget_Archive && $options->plugin('Smilies')->postmode) {
 			$arrays = self::parsesmilies();
@@ -323,35 +323,79 @@ class Smilies_Plugin implements Typecho_Plugin_Interface
 		$js = '<script type="text/javascript">
 //<![CDATA[
 Smilies = {
-	domId : function(id) {
-		return document.getElementById(id);
-	},
-	domTag : function(id) {
-		return document.getElementsByTagName(id)[0];
-	},
-	grin : function (tag) {
-		tag = \' \' + tag + \' \'; myField = this.'.$txtdom.';
-		document.selection ? (myField.focus(),sel = document.selection.createRange(),sel.text = tag,myField.focus()) : this.insertTag(tag);
-	},
-	insertTag : function (tag) {
-		myField = Smilies.'.$txtdom.';
-		myField.selectionStart || myField.selectionStart=="0" ? (
-			startPos = myField.selectionStart,
-			endPos = myField.selectionEnd,
-			cursorPos = startPos,
-			myField.value = myField.value.substring(0,startPos)
-				+ tag
-				+ myField.value.substring(endPos,myField.value.length),
-			cursorPos += tag.length,
-			myField.focus(),
-			myField.selectionStart = cursorPos,
-			myField.selectionEnd = cursorPos
-		):(
-			myField.value += tag,
-			myField.focus()
-		);
-	}
-} 
+    domId : function(id) {
+        return document.getElementById(id);
+    },
+    domTag : function(id) {
+        return document.getElementsByTagName(id)[0];
+    },
+    focus : function(field) {
+        try {
+            field.focus({preventScroll: true});
+        } catch (e) {
+            field.focus();
+        }
+    },
+    restoreScroll : function(field, scrollTop, scrollLeft, pageX, pageY) {
+        field.scrollTop = scrollTop;
+        field.scrollLeft = scrollLeft;
+        if (window.scrollTo) {
+            window.scrollTo(pageX, pageY);
+        }
+    },
+    grin : function (tag) {
+        tag = \' \' + tag + \' \';
+        var myField = this.'.$txtdom.';
+        if (!myField) {
+            return;
+        }
+
+        var pageX = window.pageXOffset || document.documentElement.scrollLeft || document.body.scrollLeft || 0;
+        var pageY = window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0;
+        var scrollTop = myField.scrollTop;
+        var scrollLeft = myField.scrollLeft;
+
+        if (document.selection && document.selection.createRange) {
+            this.focus(myField);
+            var sel = document.selection.createRange();
+            sel.text = tag;
+            this.focus(myField);
+            this.restoreScroll(myField, scrollTop, scrollLeft, pageX, pageY);
+            return;
+        }
+
+        this.insertTag(tag);
+    },
+    insertTag : function (tag) {
+        var myField = Smilies.'.$txtdom.';
+        if (!myField) {
+            return;
+        }
+
+        var startPos = myField.selectionStart;
+        var endPos = myField.selectionEnd;
+        var scrollTop = myField.scrollTop;
+        var scrollLeft = myField.scrollLeft;
+        var pageX = window.pageXOffset || document.documentElement.scrollLeft || document.body.scrollLeft || 0;
+        var pageY = window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0;
+
+        if (typeof startPos === "number" && typeof endPos === "number") {
+            myField.value = myField.value.substring(0, startPos)
+                + tag
+                + myField.value.substring(endPos);
+
+            var cursorPos = startPos + tag.length;
+            Smilies.focus(myField);
+            myField.selectionStart = cursorPos;
+            myField.selectionEnd = cursorPos;
+        } else {
+            myField.value += tag;
+            Smilies.focus(myField);
+        }
+
+        Smilies.restoreScroll(myField, scrollTop, scrollLeft, pageX, pageY);
+    }
+}
 //]]>
 </script>';
 
