@@ -5,7 +5,7 @@ if (!defined('__TYPECHO_ROOT_DIR__')) exit;
  * 
  * @package Smilies
  * @author 饭饭
- * @version 2.0.1
+ * @version 2.0.2
  * @dependence 14.10.10-*
  * @link https://github.com/noisky/typecho-smilies
  */
@@ -98,6 +98,7 @@ class Smilies_Plugin implements Typecho_Plugin_Interface
 	 * @return array
 	 */
 	private static function cname(&$value) {
+		$value = is_string($value) ? $value : (is_scalar($value) ? (string) $value : '');
 		if (function_exists('iconv')) {
 			// 目录或文件名已经是 UTF-8 时直接保留，避免 iconv() 报错。
 			$isUtf8 = function_exists('mb_check_encoding')
@@ -111,7 +112,10 @@ class Smilies_Plugin implements Typecho_Plugin_Interface
 				}
 			}
 		}
-		$value = preg_replace('/^.+[\\\\\\/]/','',$value);
+		$normalized = preg_replace('/^.+[\\\\\\/]/','',$value);
+		if ($normalized !== null) {
+			$value = $normalized;
+		}
 	}
 
 	/**
@@ -133,7 +137,7 @@ class Smilies_Plugin implements Typecho_Plugin_Interface
 	 */
 	private static function assetUrl($path, $options, $settings)
 	{
-		$cdn = trim((string)$settings->cdn);
+		$cdn = trim(self::stringValue(self::settingValue($settings, 'cdn', '')));
 		if ($cdn) {
 			return rtrim($cdn, '/') . '/' . ltrim($path, '/');
 		}
@@ -210,19 +214,27 @@ class Smilies_Plugin implements Typecho_Plugin_Interface
 		);
 
 		$smiliesurl = self::assetUrl('paopao/', $options, $settings);
+		$smiliesurlHtml = htmlspecialchars($smiliesurl, ENT_QUOTES, 'UTF-8');
 		$smiled = array();
+		$smiliesicon = array();
+		$smiliestag = array();
+		$smiliesimg = array();
+		$smilies = '<div class="btn ">选择表情</div>';
 
 		foreach ($smiliestrans as $tag=>$grin) {
-			$smilies = '<div class="btn ">选择表情</div>';
+			$tagHtml = htmlspecialchars($tag, ENT_QUOTES, 'UTF-8');
+			$tagJs = htmlspecialchars((string) json_encode($tag, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT), ENT_QUOTES, 'UTF-8');
+			$grinHtml = htmlspecialchars($grin, ENT_QUOTES, 'UTF-8');
 
 			if (!in_array($grin,$smiled)) {
 				$smiled[] = $grin;
-				$smiliesicon[] = '<span onclick="Smilies.grin(\''.$tag.'\');" data-tag=" '.$tag.' " class="face"><img src="'.$smiliesurl.$grin.'" loading="lazy" decoding="async" width="30" height="30" alt="'.$grin.'"/></span>';
+				$smiliesicon[] = '<span onclick="Smilies.grin('.$tagJs.');" data-tag=" '.$tagHtml.' " class="face"><img src="'.$smiliesurlHtml.$grinHtml.'" loading="lazy" decoding="async" width="30" height="30" alt="'.$grinHtml.'"/></span>';
 			}
 
 			$smiliestag[] = $tag;
 			$grin =str_replace("@2x", "", $grin);
-			$smiliesimg[] = '<img class="smilies"  src="'.$smiliesurl.$grin.'" loading="lazy" decoding="async" alt="'.$grin.'"/>';
+			$grinHtml = htmlspecialchars($grin, ENT_QUOTES, 'UTF-8');
+			$smiliesimg[] = '<img class="smilies"  src="'.$smiliesurlHtml.$grinHtml.'" loading="lazy" decoding="async" alt="'.$grinHtml.'"/>';
 		}
 
 		return array($smilies,$smiliesicon,$smiliestag,$smiliesimg);
@@ -240,7 +252,7 @@ class Smilies_Plugin implements Typecho_Plugin_Interface
 		$settings = $options->plugin('Smilies');
 		// CDN只替换表情图片，样式表使用插件本地文件，避免CDN未同步CSS时图片按原始尺寸显示。
 		$smiliedcss = Typecho_Common::url('Smilies/smilies.css', $options->pluginUrl);
-		if (Helper::options()->plugin('Smilies')->postmode) {
+		if (self::settingEnabled($settings, 'postmode', false)) {
 			echo '<link href="'.$smiliedcss.'" rel="stylesheet" type="text/css" />';
 			echo '<section class="typecho-post-option"><label for="template" class="typecho-label">'._t('选择表情').'</label><p>';
 			self::output();
@@ -258,13 +270,25 @@ class Smilies_Plugin implements Typecho_Plugin_Interface
 	 */
 	public static function showsmilies($content,$widget,$lastResult)
 	{
-		$content = empty($lastResult) ? $content : $lastResult;
+		$content = is_string($lastResult) && $lastResult !== ''
+			? $lastResult
+			: self::stringValue($content);
 
 		$options = Helper::options();
-		//允许图片标签
-		$options->commentsHTMLTagAllowed .= '<img src="" alt="" style="" loading="" decoding=""/>';
+		// 每个请求只追加一次图片标签白名单，避免多条评论重复累加。
+		static $allowedImgTagAdded = false;
+		if (!$allowedImgTagAdded) {
+			$imgTag = '<img src="" alt="" style="" loading="" decoding=""/>';
+			$allowedTags = self::stringValue($options->commentsHTMLTagAllowed);
+			if (false === strpos($allowedTags, $imgTag)) {
+				$options->commentsHTMLTagAllowed = $allowedTags . $imgTag;
+			}
+			$allowedImgTagAdded = true;
+		}
 
-		if ($widget instanceof Widget_Abstract_Comments || $widget instanceof Widget_Archive && $options->plugin('Smilies')->postmode) {
+		if ($widget instanceof Widget_Abstract_Comments
+			|| ($widget instanceof Widget_Archive
+				&& self::settingEnabled($options->plugin('Smilies'), 'postmode', false))) {
 			$arrays = self::parsesmilies();
 			$content = str_replace($arrays['2'],$arrays['3'],$content);
 		}
@@ -308,8 +332,8 @@ class Smilies_Plugin implements Typecho_Plugin_Interface
 	{
 		$options = Helper::options();
 		$settings = $options->plugin('Smilies');
-		$textareaid = $settings->textareaid;
-		$textareaid = $textareaid ? $textareaid : _t('一般无需填写');
+		$textareaid = self::stringValue(self::settingValue($settings, 'textareaid', ''));
+		$textareaid = $textareaid !== '' ? $textareaid : _t('一般无需填写');
 
 		$idset = $widget->is('single') ? $textareaid : 'text';
 		$txtid = $idset;
@@ -403,10 +427,48 @@ Smilies = {
 			echo $js;
 		}
 		if (($widget instanceof Widget_Contents_Post_Edit || $widget instanceof \Widget\Contents\Page\Edit)
-			&& $settings->postmode) {
+			&& self::settingEnabled($settings, 'postmode', false)) {
 			echo $js;
 		}
 
+	}
+
+	/**
+	 * 读取插件配置，兼容 Typecho_Config 和数组配置。
+	 */
+	private static function settingValue($settings, $name, $default = null)
+	{
+		if (is_array($settings) && array_key_exists($name, $settings)) {
+			return $settings[$name];
+		}
+
+		if ($settings instanceof ArrayAccess && isset($settings[$name])) {
+			return $settings[$name];
+		}
+
+		if (is_object($settings) && property_exists($settings, $name)) {
+			return $settings->{$name};
+		}
+
+		return $default;
+	}
+
+	/**
+	 * 将外部值安全转换为字符串。
+	 */
+	private static function stringValue($value)
+	{
+		return is_string($value) ? $value : (is_scalar($value) ? (string) $value : '');
+	}
+
+	/**
+	 * 读取 1/0、true/false 形式的开关配置。
+	 */
+	private static function settingEnabled($settings, $name, $default = false)
+	{
+		$value = self::settingValue($settings, $name, $default);
+
+		return in_array($value, array(true, 1, '1', 'true', 'on', 'yes'), true);
 	}
 
 }
